@@ -33,7 +33,8 @@ class Learner():
         self.model_root = "saved_models"
         save_model_directory = os.path.join(
             self.model_root, time.strftime("%Y-%m-%d_%H%M%S"))
-        self.model = nn.DataParallel(SegmentationModule(DualLoss(6), SAUNet(6), 6)).to(self.device)
+        self.model = nn.DataParallel(SegmentationModule(
+            DualLoss(6), SAUNet(6), 6)).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         loadModel(
             self.model, self.model_root, model_path, self.optimizer,
@@ -62,30 +63,15 @@ class Learner():
         progress_bar.set_description(" Validation")
 
         # Run batches
-        acc_epoch = 0
-        loss_epoch = 0
         for i, (X, y) in zip(progress_bar, self.valid_dataloader):
             X, y = X.to(self.device), y.to(self.device)
-            canny = np.array(
-                [
-                    cv2.Canny(np.uint8(x), 10, 100) 
-                    for x in list(np.moveaxis(X.cpu().numpy(), -3, -1))
-                ]
-            )
-            loss, acc = self.model({
-                "image": X,
-                "mask": (
-                    y, 
-                    torch.from_numpy(canny).to(self.device).float()
-                ),
-                "name": "a"}
-            )
-            loss = loss.mean()
-            acc_epoch += (sum(acc[0])/2 - acc_epoch) / (i+1)
-            loss_epoch = (loss - loss_epoch) / (i+1)
+            prediction, loss = self.predict(X, y, "train")
+            updateEpochMetrics(
+                prediction, y, loss, i, self.epoch_metrics, "valid",
+                self.optimizer)
 
         # Logging
-        print(f"\nValidation accuracy: {acc_epoch}")
+        print("\n{}".format(getProgressbarText(self.epoch_metrics, "Valid")))
         self.csv_logger.__call__(self.epoch_metrics)
         validation_loss = self.epoch_metrics["valid_loss"]
         self.early_stopping.__call__(
@@ -102,8 +88,6 @@ class Learner():
             progress_bar = trange(self.number_of_train_batches, leave=False)
             progress_bar.set_description(f" Epoch {epoch}/{epochs}")
             self.epoch_metrics = initializeEpochMetrics(epoch)
-            acc_epoch = 0
-            loss_epoch = 0
 
             # Run batches
             for i, (X, y) in zip(progress_bar, self.train_dataloader):
@@ -116,28 +100,38 @@ class Learner():
                 # Feed forward and backpropagation
                 X, y = X.to(self.device), y.to(self.device)
                 self.model.zero_grad()
-                canny = np.array(
-                    [
-                        cv2.Canny(np.uint8(x), 10, 100) 
-                        for x in list(np.moveaxis(X.cpu().numpy(), -3, -1))
-                    ]
-                )
-                loss, acc = self.model({
-                    "image": X,
-                    "mask": (
-                        y, 
-                        torch.from_numpy(canny).to(self.device).float()
-                    ),
-                    "name": "a"}
-                )
-                loss = loss.mean()
-                #acc_epoch += (sum(acc[0])/2 - acc_epoch) / (i+1)
-                loss_epoch = (loss - loss_epoch) / (i+1)
+                prediction, loss = self.predict(X, y, "train")
                 loss.backward()
                 self.optimizer.step()
 
                 # Compute metrics
                 with torch.no_grad():
-                    #updateEpochMetrics(
-                    #    output, y, loss, i, self.epoch_metrics, "train")
-                    progress_bar.display(f"Accuracy: {acc_epoch}", 1)
+                    updateEpochMetrics(
+                        prediction, y, loss, i, self.epoch_metrics, "train")
+                    progress_bar.display(
+                        getProgressbarText(self.epoch_metrics, "Train"), 1)
+
+    def predict(self, x, y, mode="train"):
+        if mode == "test":
+            prediction = self.model({
+                "image": x,
+                "name": "a"},
+                segSize=True
+            )
+            return prediction
+        elif mode == "train":
+            canny = np.array(
+                [
+                    cv2.Canny(np.uint8(x_), 10, 100) 
+                    for x_ in list(np.moveaxis(x.cpu().numpy(), -3, -1))
+                ]
+            )
+            prediction, loss, acc = self.model({
+                "image": x,
+                "mask": (
+                    y, 
+                    torch.from_numpy(canny).to(self.device).float()
+                ),
+                "name": "a"}
+            )
+            return prediction, loss.mean()

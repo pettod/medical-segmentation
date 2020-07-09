@@ -95,7 +95,8 @@ class SegmentationModule(SegmentationModuleBase):
                     nn.functional.softmax(p[0], dim=1)).long(),
                 feed_dict['mask'][0].long().cuda(), self.num_class
             )
-            return loss, acc
+            pred = torch.argmax(p[0], dim=1)
+            return pred, loss, acc
 
         #test
         if segSize == True:
