@@ -49,7 +49,10 @@ class SegmentationModuleBase(nn.Module):
         return jaccard if jaccard <= 1 else 0
 
     def pixel_acc(self, pred, label, num_class):
-        _, preds = torch.max(pred, dim=1)
+        if len(pred.shape) == 3:
+            preds = pred
+        else:
+            _, preds = torch.max(pred, dim=1)
         valid = (label >= 1).long()
         acc_sum = torch.sum(valid * (preds == label).long())
         pixel_sum = torch.sum(valid)

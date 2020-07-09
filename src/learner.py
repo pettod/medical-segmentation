@@ -119,7 +119,7 @@ class Learner():
                 segSize=True
             )
             return prediction
-        elif mode == "train":
+        elif mode == "train" or mode == "valid":
             canny = np.array(
                 [
                     cv2.Canny(np.uint8(x_), 10, 100) 

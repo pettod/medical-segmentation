@@ -13,7 +13,7 @@ LABELS_PATH = os.path.join(DATA_ROOT, "train.csv")
 INDEX_SPLIT = 9554
 
 # Model parameters
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 PATCH_SIZE = 16
 NUMBER_OF_PATCHES = 16
 
