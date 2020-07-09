@@ -148,7 +148,7 @@ def loadModel(
         else:
             model_name = model_path
     checkpoint = torch.load(model_name)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    model.load_state_dict(checkpoint)
     model.eval()
     if optimizer:
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])

@@ -4,7 +4,6 @@ from torchvision import transforms
 # Project files
 from src.dataset import ImageDataset
 from src.learner import Learner
-from src.loss_functions import lossFunction
 
 # Data paths
 DATA_ROOT = os.path.realpath("../input/prostate-cancer-grade-assessment")
@@ -15,15 +14,15 @@ INDEX_SPLIT = 9554
 
 # Model parameters
 BATCH_SIZE = 8
-PATCH_SIZE = 128
-NUMBER_OF_PATCHES = 36
+PATCH_SIZE = 16
+NUMBER_OF_PATCHES = 16
 
 LOAD_MODEL = False
 MODEL_PATH = None
 PATIENCE = 10
 LEARNING_RATE = 1e-4
 DROP_LAST_BATCH = True
-NUMBER_OF_DATALOADER_WORKERS = 8
+NUMBER_OF_DATALOADER_WORKERS = 2
 
 
 def main():
@@ -40,7 +39,7 @@ def main():
         IMAGE_DIR, MASK_DIR, LABELS_PATH, [INDEX_SPLIT, -1], PATCH_SIZE,
         NUMBER_OF_PATCHES, valid_transforms)
     learner = Learner(
-        train_dataset, valid_dataset, BATCH_SIZE, LEARNING_RATE, lossFunction,
+        train_dataset, valid_dataset, BATCH_SIZE, LEARNING_RATE,
         PATIENCE, NUMBER_OF_DATALOADER_WORKERS, LOAD_MODEL, MODEL_PATH,
         DROP_LAST_BATCH)
     learner.train()

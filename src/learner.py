@@ -7,10 +7,12 @@ from torch.utils.data import DataLoader
 import os
 import time
 from tqdm import trange
+import numpy as np
+import cv2
 
 # Project files
+from Model import SegmentationModule, SAUNet, DualLoss
 from src.callbacks import CsvLogger, EarlyStopping
-from src.network import Net
 from src.utils import \
     initializeEpochMetrics, updateEpochMetrics, getProgressbarText, \
     saveLearningCurve, loadModel
@@ -19,9 +21,8 @@ from src.utils import \
 class Learner():
     def __init__(
             self, train_dataset, valid_dataset, batch_size, learning_rate,
-            loss_function, patience, num_workers=1,
-            load_pretrained_weights=False, model_path=None,
-            drop_last_batch=False):
+            patience, num_workers=1, load_pretrained_weights=False,
+            model_path=None, drop_last_batch=False):
         # Device (CPU / CUDA)
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
@@ -32,14 +33,13 @@ class Learner():
         self.model_root = "saved_models"
         save_model_directory = os.path.join(
             self.model_root, time.strftime("%Y-%m-%d_%H%M%S"))
-        self.model = nn.DataParallel(Net()).to(self.device)
+        self.model = nn.DataParallel(SegmentationModule(DualLoss(6), SAUNet(6), 6)).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
         loadModel(
             self.model, self.model_root, model_path, self.optimizer,
             load_pretrained_weights)
 
-        # Callbacks, loss function, scheduler
-        self.loss_function = loss_function
+        # Callbacks, scheduler
         self.scheduler = ReduceLROnPlateau(
             self.optimizer, "min", 0.3, patience//3, min_lr=1e-8)
         self.csv_logger = CsvLogger(save_model_directory)
@@ -62,16 +62,30 @@ class Learner():
         progress_bar.set_description(" Validation")
 
         # Run batches
+        acc_epoch = 0
+        loss_epoch = 0
         for i, (X, y) in zip(progress_bar, self.valid_dataloader):
             X, y = X.to(self.device), y.to(self.device)
-            output = self.model(X)
-            loss = self.loss_function(output, y)
-            updateEpochMetrics(
-                output, y, loss, i, self.epoch_metrics, "valid",
-                self.optimizer)
+            canny = np.array(
+                [
+                    cv2.Canny(np.uint8(x), 10, 100) 
+                    for x in list(np.moveaxis(X.cpu().numpy(), -3, -1))
+                ]
+            )
+            loss, acc = self.model({
+                "image": X,
+                "mask": (
+                    y, 
+                    torch.from_numpy(canny).to(self.device).float()
+                ),
+                "name": "a"}
+            )
+            loss = loss.mean()
+            acc_epoch += (sum(acc[0])/2 - acc_epoch) / (i+1)
+            loss_epoch = (loss - loss_epoch) / (i+1)
 
         # Logging
-        print("\n{}".format(getProgressbarText(self.epoch_metrics, "Valid")))
+        print(f"\nValidation accuracy: {acc_epoch}")
         self.csv_logger.__call__(self.epoch_metrics)
         validation_loss = self.epoch_metrics["valid_loss"]
         self.early_stopping.__call__(
@@ -88,26 +102,42 @@ class Learner():
             progress_bar = trange(self.number_of_train_batches, leave=False)
             progress_bar.set_description(f" Epoch {epoch}/{epochs}")
             self.epoch_metrics = initializeEpochMetrics(epoch)
+            acc_epoch = 0
+            loss_epoch = 0
 
             # Run batches
             for i, (X, y) in zip(progress_bar, self.train_dataloader):
 
                 # Validation epoch before last batch
                 if i == self.number_of_train_batches - 1:
-                    with torch.no_grad():
+                    with torch.no_grad(): 
                         self.validationEpoch()
 
                 # Feed forward and backpropagation
-                X, y = X.to(self.device), y.to(self.device).unsqueeze(1)
+                X, y = X.to(self.device), y.to(self.device)
                 self.model.zero_grad()
-                output = self.model(X)
-                loss = self.loss_function(output, y)
+                canny = np.array(
+                    [
+                        cv2.Canny(np.uint8(x), 10, 100) 
+                        for x in list(np.moveaxis(X.cpu().numpy(), -3, -1))
+                    ]
+                )
+                loss, acc = self.model({
+                    "image": X,
+                    "mask": (
+                        y, 
+                        torch.from_numpy(canny).to(self.device).float()
+                    ),
+                    "name": "a"}
+                )
+                loss = loss.mean()
+                #acc_epoch += (sum(acc[0])/2 - acc_epoch) / (i+1)
+                loss_epoch = (loss - loss_epoch) / (i+1)
                 loss.backward()
                 self.optimizer.step()
 
                 # Compute metrics
                 with torch.no_grad():
-                    updateEpochMetrics(
-                        output, y, loss, i, self.epoch_metrics, "train")
-                    progress_bar.display(
-                        getProgressbarText(self.epoch_metrics, "Train"), 1)
+                    #updateEpochMetrics(
+                    #    output, y, loss, i, self.epoch_metrics, "train")
+                    progress_bar.display(f"Accuracy: {acc_epoch}", 1)
