@@ -35,8 +35,8 @@ class ImageDataset(Dataset):
             self.image_directory, f"{self.image_ids[sample_index]}.tiff")
         tiff_mask_filepath = os.path.join(
             self.mask_directory, f"{self.image_ids[sample_index]}_mask.tiff")
-        tiff_image = MultiImage(tiff_image_filepath)[1]
-        tiff_mask = MultiImage(tiff_mask_filepath)[1]
+        tiff_image = MultiImage(tiff_image_filepath)[2]
+        tiff_mask = MultiImage(tiff_mask_filepath)[2]
         tile_patches = tile(
             self.number_of_patches, self.patch_size, tiff_image, tiff_mask)
         if self.transform:
@@ -47,7 +47,9 @@ class ImageDataset(Dataset):
                     sample["image"])))
                 random.seed(seed)
                 sample["mask"] = np.array(self.transform(Image.fromarray(
-                    sample["mask"])))[..., 0]
+                    sample["mask"])))
+        for sample in tile_patches:
+            sample["mask"] = sample["mask"][..., 0]
         concatenated_image, concatenated_mask = concatenatePatches(
             tile_patches)
         return \
