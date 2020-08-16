@@ -9,7 +9,11 @@ import random
 import numpy as np
 import pandas as pd
 from skimage.io import MultiImage
+from src.utils import loadModel
+from torch import nn
+import torch
 
+from Model import SegmentationModule, SAUNet, DualLoss
 
 class ImageDataset(Dataset):
     def __init__(
@@ -57,6 +61,25 @@ class ImageDataset(Dataset):
             concatenated_mask.astype(np.float32)
 
 
+class PredictedMaskDataset(ImageDataset):
+    def __init__(
+            self, image_directory, mask_directory, labels_path, index_range,
+            patch_size, number_of_patches, transform=None):
+        super(PredictedMaskDataset, self).__init__(
+            image_directory, mask_directory, labels_path, index_range,
+            patch_size, number_of_patches, transform)
+        self.device = torch.device("cuda:0")
+        self.model = SegmentationModule(
+            DualLoss(6), SAUNet(6), 6).to(self.device)
+        loadModel(self.model, "saved_models")
+
+    def __getitem__(self, sample_index):
+        image, _ = super(
+            PredictedMaskDataset, self).__getitem__(sample_index)
+        mask = torch.stack((self.model(image.to(self.device)),)*3)
+        return mask
+
+
 def concatenatePatches(tile_dictionary):
     N = len(tile_dictionary)
     col_size = int(np.sqrt(N))
@@ -85,8 +108,10 @@ def tile(N, sz, img, mask=None):
     img = img.reshape(img.shape[0]//sz,sz,img.shape[1]//sz,sz,3)
     img = img.transpose(0,2,1,3,4).reshape(-1,sz,sz,3)
     if mask is not None:
-        mask = np.pad(mask,[[pad0//2,pad0-pad0//2],[pad1//2,pad1-pad1//2],[0,0]],
-                    constant_values=0)
+        mask = np.pad(
+            mask,[[pad0//2,pad0-pad0//2],
+            [pad1//2,pad1-pad1//2],[0,0]],constant_values=0
+        )
         mask = mask.reshape(mask.shape[0]//sz,sz,mask.shape[1]//sz,sz,3)
         mask = mask.transpose(0,2,1,3,4).reshape(-1,sz,sz,3)
         if len(img) < N:

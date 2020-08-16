@@ -25,7 +25,7 @@ class Learner():
             model_path=None, drop_last_batch=False):
         # Device (CPU / CUDA)
         self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+            "cuda:1" if torch.cuda.is_available() else "cpu")
         if not torch.cuda.is_available():
             print("WARNING: Running on CPU\n\n\n\n")
 

@@ -97,6 +97,6 @@ def main():
         plt.pause(4)
         plt.clf()
 
-
-with torch.no_grad():
-    main()
+if __name__  == "__main__":
+    with torch.no_grad():
+        main()
